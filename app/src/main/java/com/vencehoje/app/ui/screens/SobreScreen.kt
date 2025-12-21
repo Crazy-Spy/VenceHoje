@@ -1,4 +1,4 @@
-package com.vencehoje.app
+package com.vencehoje.app.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*

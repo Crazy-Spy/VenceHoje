@@ -1,6 +1,11 @@
-package com.vencehoje.app
+package com.vencehoje.app.data
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -11,7 +16,7 @@ interface BillDao {
     @Query("SELECT * FROM bills")
     suspend fun getAllBillsSync(): List<Bill> // Novo método para o Worker
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.Companion.REPLACE)
     suspend fun insertBill(bill: Bill)
 
     @Delete

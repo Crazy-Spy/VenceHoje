@@ -1,9 +1,11 @@
-package com.vencehoje.app
+package com.vencehoje.app.data
 
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.vencehoje.app.data.Bill
+import com.vencehoje.app.data.BillDao
 
 @Database(entities = [Bill::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {

@@ -1,0 +1,221 @@
+package com.vencehoje.app.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.vencehoje.app.*
+import com.vencehoje.app.data.BillRepository
+import com.vencehoje.app.ui.components.DashboardLegend
+import com.vencehoje.app.ui.components.PieChart
+import com.vencehoje.app.ui.dialogs.MonthYearPickerDialog
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.*
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
+    val bills by repository.allBills.collectAsState(initial = emptyList())
+    var selectedMonth by remember { mutableIntStateOf(LocalDate.now().monthValue) }
+    var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
+    var filterMode by remember { mutableStateOf("Pagos") }
+    var showMonthYearPicker by remember { mutableStateOf(false) }
+    val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+    val scrollState = rememberScrollState()
+
+    fun parseCurrency(value: String): Double {
+        return try {
+            val cleanString = value.replace(Regex("[^0-9]"), "")
+            cleanString.toDouble() / 100.0
+        } catch (e: Exception) { 0.0 }
+    }
+
+    val paidTotals = remember(bills, selectedMonth, selectedYear) {
+        val totals = mutableMapOf<String, Double>()
+        var totalEncargos = 0.0
+        bills.filter { bill ->
+            if (!bill.isPaid) return@filter false
+            val dateStr = bill.paymentDate ?: bill.dueDate
+            try {
+                val date = LocalDate.parse(dateStr, formatter)
+                date.monthValue == selectedMonth && date.year == selectedYear
+            } catch (e: Exception) { false }
+        }.forEach { bill ->
+            val valorBase = parseCurrency(bill.value)
+            val valorPagoFinal = if (bill.paidValue != null) parseCurrency(bill.paidValue!!) else valorBase
+            totals[bill.category] = (totals[bill.category] ?: 0.0) + valorBase
+            if (valorPagoFinal > valorBase) { totalEncargos += (valorPagoFinal - valorBase) }
+        }
+        if (totalEncargos > 0.01) { totals["Encargos"] = (totals["Encargos"] ?: 0.0) + totalEncargos }
+        totals
+    }
+
+// Procure por "val displayData = remember..."
+    val displayData = remember(bills, selectedMonth, selectedYear, filterMode) {
+        val totals = mutableMapOf<String, Double>()
+        var totalEncargos = 0.0
+
+        bills.filter { bill ->
+            val dateStr = if (bill.isPaid) (bill.paymentDate ?: bill.dueDate) else bill.dueDate
+            val date = try { LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("dd/MM/yyyy")) } catch (e: Exception) { null }
+            val matchesDate = date?.monthValue == selectedMonth && date?.year == selectedYear
+            val matchesFilter = if (filterMode == "Pagos") bill.isPaid else !bill.isPaid
+            matchesDate && matchesFilter
+        }.forEach { bill ->
+            val valorBase = parseCurrency(bill.value)
+            val isVariable = valorBase < 0.01
+
+            if (bill.isPaid) {
+                val valorPagoFinal = if (bill.paidValue != null) parseCurrency(bill.paidValue!!) else valorBase
+
+                if (isVariable) {
+                    // Se é variável, TUDO vai para a categoria
+                    totals[bill.category] = (totals[bill.category] ?: 0.0) + valorPagoFinal
+                } else {
+                    // Se é fixa, separa o valor original dos juros (encargos)
+                    totals[bill.category] = (totals[bill.category] ?: 0.0) + valorBase
+                    if (valorPagoFinal > valorBase) {
+                        totalEncargos += (valorPagoFinal - valorBase)
+                    }
+                }
+            } else {
+                totals[bill.category] = (totals[bill.category] ?: 0.0) + valorBase
+            }
+        }
+
+        if (totalEncargos > 0.01) {
+            totals["Encargos"] = (totals["Encargos"] ?: 0.0) + totalEncargos
+        }
+        totals
+    }
+    val provisionTotals = remember(bills, selectedMonth, selectedYear) {
+        bills.filter { bill ->
+            if (bill.isPaid) return@filter false
+            try {
+                val date = LocalDate.parse(bill.dueDate, formatter)
+                date.monthValue == selectedMonth && date.year == selectedYear
+            } catch (e: Exception) { false }
+        }.groupBy { it.category }
+            .mapValues { (_, list) -> list.sumOf { parseCurrency(it.value) } }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Dashboard") },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF1B5E20),
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // --- SELETOR DE MÊS/ANO ---
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(16.dp)
+                    .background(Color(0xFFE8F5E9), RoundedCornerShape(8.dp))
+                    .clickable { showMonthYearPicker = true }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                IconButton(onClick = {
+                    if (selectedMonth == 1) { selectedMonth = 12; selectedYear-- } else selectedMonth--
+                }) { Icon(Icons.Default.KeyboardArrowLeft, null, tint = Color(0xFF1B5E20)) }
+
+                val monthLabel = java.time.Month.of(selectedMonth)
+                    .getDisplayName(TextStyle.FULL, Locale("pt", "BR"))
+                    .replaceFirstChar { it.uppercase() }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    Text("$monthLabel / $selectedYear", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF1B5E20))
+                    Text("Clique para alterar", fontSize = 10.sp, color = Color.Gray)
+                }
+
+                IconButton(onClick = {
+                    if (selectedMonth == 12) { selectedMonth = 1; selectedYear++ } else selectedMonth++
+                }) { Icon(Icons.Default.KeyboardArrowRight, null, tint = Color(0xFF1B5E20)) }
+            }
+
+            // --- NOVO: FILTROS RÁPIDOS (CHIPS) ---
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                listOf("Pagos", "Pendentes").forEach { label ->
+                    FilterChip(
+                        selected = filterMode == label,
+                        onClick = { filterMode = label },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFC8E6C9),
+                            selectedLabelColor = Color(0xFF1B5E20)
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // --- TÍTULO DINÂMICO ---
+            val titleColor = if (filterMode == "Pendentes") Color(0xFFB71C1C) else Color(0xFF2E7D32)
+            Text(
+                text = "Resumo: $filterMode",
+                fontWeight = FontWeight.Black,
+                fontSize = 14.sp,
+                color = titleColor
+            )
+
+            // --- GRÁFICO E LEGENDA UNIFICADOS ---
+            if (displayData.isEmpty()) {
+                Text(
+                    text = "Nada para exibir neste filtro. 🎉",
+                    modifier = Modifier.padding(32.dp),
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            } else {
+                PieChart(data = displayData)
+                DashboardLegend(data = displayData)
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    if (showMonthYearPicker) {
+        MonthYearPickerDialog(
+            currentMonth = selectedMonth,
+            currentYear = selectedYear,
+            onDismiss = { showMonthYearPicker = false },
+            onConfirm = { m, y ->
+                selectedMonth = m
+                selectedYear = y
+                showMonthYearPicker = false
+            }
+        )
+    }
+}

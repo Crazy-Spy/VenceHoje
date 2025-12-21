@@ -1,4 +1,4 @@
-package com.vencehoje.app
+package com.vencehoje.app.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
