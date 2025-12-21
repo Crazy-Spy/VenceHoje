@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.work.*
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.UpdateAvailability
 import com.vencehoje.app.data.AppDatabase
 import com.vencehoje.app.data.BillRepository
 import kotlinx.coroutines.launch
@@ -31,6 +34,7 @@ import com.vencehoje.app.ui.theme.VenceHojeTheme
 import com.vencehoje.app.logic.saveCsvToUri
 import com.vencehoje.app.logic.importFromCSV
 import kotlinx.coroutines.flow.first
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +50,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkForUpdates() {
+        val appUpdateManager = AppUpdateManagerFactory.create(this)
+        val appUpdateInfoTask = appUpdateManager.appUpdateInfo
+
+        appUpdateInfoTask.addOnSuccessListener { appUpdateInfo ->
+            // Se houver uma atualização disponível e for permitida a atualização imediata
+            if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
+                && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
+            ) {
+                appUpdateManager.startUpdateFlowForResult(
+                    appUpdateInfo,
+                    AppUpdateType.IMMEDIATE,
+                    this,
+                    999 // Um código qualquer para identificar o retorno
+                )
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val appUpdateManager = AppUpdateManagerFactory.create(this)
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
+            if (info.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                appUpdateManager.startUpdateFlowForResult(info, AppUpdateType.IMMEDIATE, this, 999)
+            }
+        }
+    }
     private fun setupInitialWorker(context: Context) {
         val request = OneTimeWorkRequestBuilder<NotificationWorker>().build()
         WorkManager.getInstance(context).enqueueUniqueWork("vencehoje_loop", ExistingWorkPolicy.KEEP, request)

@@ -13,8 +13,8 @@ android {
         applicationId = "com.vencehoje.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.0.7"
+        versionCode = 9
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -65,4 +65,5 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 }
