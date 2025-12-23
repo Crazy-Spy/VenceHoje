@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -19,7 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.vencehoje.app.data.BillRepository
 import com.vencehoje.app.ui.components.DashboardLegend
 import com.vencehoje.app.ui.components.PieChart
-import com.vencehoje.app.ui.dialogs.MonthYearPickerDialog
+import com.vencehoje.app.ui.components.MonthYearPickerDialog
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -27,24 +28,39 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
-    // Coleta as contas e as categorias do banco
-    val bills by repository.allBills.collectAsState(initial = emptyList())
-    val categories by repository.allCategories.collectAsState(initial = emptyList())
+fun DashboardScreen(
+    repository: BillRepository,
+    profileId: Int,
+    onBack: () -> Unit,
+    onProfileChange: (Int) -> Unit // <--- NOVO PARÂMETRO
+) {
+    val bills by remember(profileId) { repository.getBillsByProfile(profileId) }
+        .collectAsState(initial = emptyList())
+
+    val categories by remember(profileId) { repository.getCategoriesByProfile(profileId) }
+        .collectAsState(initial = emptyList())
+
+    val allProfiles by repository.allProfiles.collectAsState(initial = emptyList())
+    val currentProfile = allProfiles.find { it.id == profileId }
 
     var selectedMonth by remember { mutableIntStateOf(LocalDate.now().monthValue) }
     var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
     var filterMode by remember { mutableStateOf("Pagos") }
     var showMonthYearPicker by remember { mutableStateOf(false) }
+
+    // Estado do Menu Dropdown
+    var isProfileMenuExpanded by remember { mutableStateOf(false) }
+
     val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val scrollState = rememberScrollState()
 
-    // 1. Criamos o mapa de Cores para o Gráfico (Nome -> Color)
     val categoryColors = remember(categories) {
         categories.associate {
-            it.name to Color(android.graphics.Color.parseColor(it.colorHex))
+            it.name to try {
+                Color(android.graphics.Color.parseColor(it.colorHex))
+            } catch (e: Exception) { Color.Gray }
         }.toMutableMap().apply {
-            this["Encargos"] = Color.Red // Cor fixa para juros
+            this["Encargos"] = Color.Red
         }
     }
 
@@ -55,7 +71,6 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
         } catch (e: Exception) { 0.0 }
     }
 
-    // 2. Processamento dos dados para exibição
     val displayData = remember(bills, categories, selectedMonth, selectedYear, filterMode) {
         val totals = mutableMapOf<String, Double>()
         var totalEncargos = 0.0
@@ -67,7 +82,6 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
             val matchesFilter = if (filterMode == "Pagos") bill.isPaid else !bill.isPaid
             matchesDate && matchesFilter
         }.forEach { bill ->
-            // Buscamos o nome da categoria pelo ID
             val categoryName = categories.find { it.id == bill.categoryId }?.name ?: "Outros"
             val valorBase = parseCurrency(bill.value)
             val isVariable = valorBase < 0.01
@@ -96,7 +110,76 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Dashboard", fontWeight = FontWeight.Black) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Dashboard", fontWeight = FontWeight.Black)
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Chip Visual INTERATIVO
+                        Surface(
+                            modifier = Modifier.clickable { isProfileMenuExpanded = true }, // Agora clica!
+                            color = Color.White.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(
+                                            try { Color(android.graphics.Color.parseColor(currentProfile?.colorHex ?: "#FFFFFF")) }
+                                            catch (e: Exception) { Color.White },
+                                            CircleShape
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = currentProfile?.name ?: "...",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                // Setinha para indicar que clica
+                                Icon(Icons.Default.ArrowDropDown, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+
+                            // Menu Dropdown
+                            DropdownMenu(
+                                expanded = isProfileMenuExpanded,
+                                onDismissRequest = { isProfileMenuExpanded = false }
+                            ) {
+                                allProfiles.forEach { profile ->
+                                    DropdownMenuItem(
+                                        text = { Text(profile.name, fontWeight = if(profile.id == profileId) FontWeight.Bold else FontWeight.Normal) },
+                                        onClick = {
+                                            onProfileChange(profile.id)
+                                            isProfileMenuExpanded = false
+                                        },
+                                        leadingIcon = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(12.dp)
+                                                    .background(
+                                                        try { Color(android.graphics.Color.parseColor(profile.colorHex)) }
+                                                        catch (e: Exception) { Color.Gray },
+                                                        CircleShape
+                                                    )
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (profile.id == profileId) {
+                                                Icon(Icons.Default.Check, null, tint = Color(0xFF1B5E20))
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF1B5E20),
@@ -113,7 +196,7 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- SELETOR DE MÊS/ANO ---
+            // ... (Resto do conteúdo mantido igual)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -140,7 +223,6 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                 }) { Icon(Icons.Default.KeyboardArrowRight, null, tint = Color(0xFF1B5E20)) }
             }
 
-            // --- FILTROS RÁPIDOS (CHIPS) ---
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -168,7 +250,6 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                 color = titleColor
             )
 
-            // --- GRÁFICO E LEGENDA ---
             if (displayData.isEmpty()) {
                 Text(
                     text = "Nada para exibir neste filtro. 🎉",
@@ -177,11 +258,9 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                     color = Color.Gray
                 )
             } else {
-                // CORREÇÃO: Passando o mapa de cores para os componentes
                 PieChart(data = displayData, categoryColors = categoryColors)
                 DashboardLegend(data = displayData, categoryColors = categoryColors)
             }
-
             Spacer(modifier = Modifier.height(32.dp))
         }
     }

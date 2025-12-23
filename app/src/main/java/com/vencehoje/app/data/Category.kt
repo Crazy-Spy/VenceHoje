@@ -9,5 +9,6 @@ data class Category(
     val name: String,
     val colorHex: String,
     val iconName: String, // Nome do ícone do Material Design
-    val isBuiltIn: Boolean = false
+    val isBuiltIn: Boolean = false,
+    val profileId: Int = 1
 )

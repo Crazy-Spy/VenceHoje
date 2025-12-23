@@ -5,21 +5,30 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BillDao {
-    @Query("SELECT * FROM bills ORDER BY id DESC")
-    fun getAllBills(): Flow<List<Bill>>
+    // --- MÉTODOS FILTRADOS (Para a UI do Dashboard) ---
+    // Só traz as contas do perfil que está selecionado na tela
+    @Query("SELECT * FROM bills WHERE profileId = :profileId ORDER BY CASE periodicity WHEN 'U' THEN 1 ELSE 0 END, dueDate ASC")
+        fun getBillsByProfile(profileId: Int): Flow<List<Bill>>
 
-    @Query("SELECT * FROM bills")
-    suspend fun getAllBillsSync(): List<Bill>
+        // Para somatórios e relatórios de um perfil específico
+        @Query("SELECT * FROM bills WHERE profileId = :profileId")
+        suspend fun getBillsByProfileSync(profileId: Int): List<Bill>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertBill(bill: Bill)
+        // --- MÉTODOS GLOBAIS (Para o NotificationWorker e Backup) ---
+        // O Worker precisa ver TUDO para avisar se a conta do seu pai ou a sua vai vencer
+        @Query("SELECT * FROM bills")
+        suspend fun getAllBillsGlobalSync(): List<Bill>
 
-    @Delete
-    suspend fun deleteBill(bill: Bill)
+        @Insert(onConflict = OnConflictStrategy.REPLACE)
+        suspend fun insertBill(bill: Bill): Long
 
-    @Update
-    suspend fun updateBill(bill: Bill)
+        @Update
+        suspend fun updateBill(bill: Bill)
 
-    @Query("DELETE FROM bills")
-    suspend fun deleteAll()
+        @Delete
+        suspend fun deleteBill(bill: Bill)
+
+        // Deleta todas as contas de um perfil (cuidado!)
+        @Query("DELETE FROM bills WHERE profileId = :profileId")
+        suspend fun deleteBillsByProfile(profileId: Int)
 }

@@ -5,24 +5,23 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CategoryDao {
+    // --- MÉTODOS FILTRADOS (Para a UI de gerenciar categorias) ---
+    // Cada perfil tem suas próprias categorias (ex: Seu pai pode não ter "Games")
+    @Query("SELECT * FROM categories WHERE profileId = :profileId ORDER BY name ASC")
+    fun getCategoriesByProfile(profileId: Int): Flow<List<Category>>
 
-    // Retorna um Flow para a UI (MainActivity/Screens) atualizar automaticamente
-    @Query("SELECT * FROM categories ORDER BY name ASC")
-    fun getAllCategories(): Flow<List<Category>>
-
-    // Versão síncrona (suspend) para checagens rápidas, como o Seed do banco
+    // --- MÉTODOS GLOBAIS (Para o NotificationWorker) ---
+    // O Worker precisa saber o ícone/emoji de qualquer categoria, de qualquer perfil
     @Query("SELECT * FROM categories")
-    suspend fun getAllCategoriesSync(): List<Category>
-
-    @Query("SELECT * FROM categories WHERE id = :id")
-    suspend fun getCategoryById(id: Int): Category?
+    suspend fun getAllCategoriesGlobalSync(): List<Category>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(category: Category)
+    suspend fun insertCategory(category: Category)
 
     @Delete
-    suspend fun delete(category: Category)
+    suspend fun deleteCategory(category: Category)
 
-    @Query("DELETE FROM categories")
-    suspend fun deleteAll()
+    // Útil para quando você cria um perfil novo e quer copiar as categorias padrão pra ele
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(categories: List<Category>)
 }

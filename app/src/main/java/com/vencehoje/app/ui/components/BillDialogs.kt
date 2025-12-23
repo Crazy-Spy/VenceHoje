@@ -1,4 +1,4 @@
-package com.vencehoje.app.ui.dialogs
+package com.vencehoje.app.ui.components
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
@@ -28,6 +28,7 @@ import com.vencehoje.app.data.Bill
 import com.vencehoje.app.data.BillRepository
 import com.vencehoje.app.logic.getDaysRemaining
 import com.vencehoje.app.ui.components.getIconPainterFromName
+// Certifique-se que o CategoryDisplay está sendo importado do lugar certo (screens ou components, onde você deixou ele)
 import com.vencehoje.app.ui.screens.CategoryDisplay
 import java.text.NumberFormat
 import java.time.format.TextStyle
@@ -41,10 +42,14 @@ import java.time.temporal.ChronoUnit
 fun AddEditBillDialog(
     bill: Bill? = null,
     repository: BillRepository,
+    profileId: Int, // <--- NOVO PARÂMETRO NECESSÁRIO
     onDismiss: () -> Unit,
     onSave: (Bill) -> Unit
 ) {
-    val categories by repository.allCategories.collectAsState(initial = emptyList())
+    // CORREÇÃO: Agora buscamos as categorias do perfil atual!
+    val categories by remember(profileId) { repository.getCategoriesByProfile(profileId) }
+        .collectAsState(initial = emptyList())
+
     var showInfoDialog by remember { mutableStateOf(false) }
 
     // Estados do Formulário
@@ -132,6 +137,7 @@ fun AddEditBillDialog(
                             customInterval = intervalInt,
                             totalInstallments = totalInstallmentsInt,
                             currentInstallment = bill?.currentInstallment ?: 1
+                            // O profileId será injetado na tela que chama este Dialog (BillsListScreen)
                         ))
                     }
                 },
@@ -191,7 +197,6 @@ fun AddEditBillDialog(
                                         Color.Gray
                                     }
 
-                                    // USA O COMPONENTE NOVO AQUI:
                                     CategoryDisplay(
                                         iconName = cat.iconName,
                                         color = catColor,
@@ -211,26 +216,16 @@ fun AddEditBillDialog(
                                                 Color.Gray
                                             }
 
-                                            // AQUI ESTÁ A MÁGICA: TROCAMOS O ICON PELO CATEGORYDISPLAY
                                             CategoryDisplay(
                                                 iconName = cat.iconName,
                                                 color = catColor,
                                                 modifier = Modifier.size(20.dp)
                                             )
-
                                             Spacer(modifier = Modifier.width(16.dp))
-
-                                            Text(
-                                                text = cat.name,
-                                                fontSize = 15.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
+                                            Text(text = cat.name, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                         }
                                     },
-                                    onClick = {
-                                        selectedCategoryId = cat.id
-                                        expandedCat = false
-                                    }
+                                    onClick = { selectedCategoryId = cat.id; expandedCat = false }
                                 )
                             }
                         }
@@ -341,6 +336,8 @@ fun AddEditBillDialog(
     }
 }
 
+// O RESTO DO ARQUIVO (LatePaymentDialog, MonthYearPickerDialog) PODE FICAR IGUAL
+// POIS NÃO DEPENDEM DO REPOSITORY NEM DE CATEGORIAS
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LatePaymentDialog(bill: Bill, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {

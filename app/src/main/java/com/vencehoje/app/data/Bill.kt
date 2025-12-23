@@ -17,5 +17,6 @@ data class Bill(
     val totalInstallments: Int = 0,
     val currentInstallment: Int = 1,
     val isPaid: Boolean = false,
-    val isAutomatic: Boolean = false
+    val isAutomatic: Boolean = false,
+    val profileId: Int = 1
 )
