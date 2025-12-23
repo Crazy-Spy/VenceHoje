@@ -8,8 +8,7 @@ import kotlinx.coroutines.launch
 import com.vencehoje.app.data.Bill
 import com.vencehoje.app.data.BillRepository
 
-
-// Lógica de Importação extraída do MainActivity.kt
+// Lógica de Importação
 fun importFromCSV(context: Context, repository: BillRepository, scope: CoroutineScope, uri: Uri) {
     scope.launch {
         try {
@@ -17,7 +16,7 @@ fun importFromCSV(context: Context, repository: BillRepository, scope: Coroutine
             val reader = inputStream?.bufferedReader()
             val lines = reader?.readLines() ?: emptyList()
             if (lines.size > 1) {
-                repository.deleteAll()
+                repository.deleteAllBills()
                 lines.drop(1).forEach { line ->
                     val parts = line.split(";")
                     if (parts.size >= 10) {
@@ -25,7 +24,9 @@ fun importFromCSV(context: Context, repository: BillRepository, scope: Coroutine
                             name = parts[0],
                             value = parts[1],
                             dueDate = parts[2],
-                            category = parts[3],
+                            // Durante o restore, mandamos para a categoria 7 (Outros)
+                            // até termos a lógica de busca por nome.
+                            categoryId = 7,
                             isPaid = parts[4] == "Pago",
                             paidValue = parts[5].ifBlank { null },
                             paymentDate = parts[6].ifBlank { null },
@@ -44,10 +45,10 @@ fun importFromCSV(context: Context, repository: BillRepository, scope: Coroutine
     }
 }
 
-// Lógica de Exportação extraída do MainActivity.kt
+// Lógica de Exportação
 fun saveCsvToUri(context: Context, uri: Uri, bills: List<Bill>) {
-    val content = StringBuilder("Nome;Valor;Vencimento;Categoria;Status;Valor Pago;Data Pagamento;Total Parcelas;Parcela Atual;Automatico\n")
-    bills.forEach { content.append("${it.name};${it.value};${it.dueDate};${it.category};${if(it.isPaid) "Pago" else "Pendente"};${it.paidValue ?: ""};${it.paymentDate ?: ""};${it.totalInstallments};${it.currentInstallment};${if(it.isAutomatic) "Sim" else "Não"}\n") }
+    val content = StringBuilder("Nome;Valor;Vencimento;CategoryId;Status;Valor Pago;Data Pagamento;Total Parcelas;Parcela Atual;Automatico\n")
+    bills.forEach { content.append("${it.name};${it.value};${it.dueDate};${it.categoryId};${if(it.isPaid) "Pago" else "Pendente"};${it.paidValue ?: ""};${it.paymentDate ?: ""};${it.totalInstallments};${it.currentInstallment};${if(it.isAutomatic) "Sim" else "Não"}\n") }
     try {
         context.contentResolver.openOutputStream(uri)?.use { outputStream ->
             outputStream.write(content.toString().toByteArray())

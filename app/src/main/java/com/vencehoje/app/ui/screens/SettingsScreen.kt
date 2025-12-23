@@ -1,13 +1,11 @@
 package com.vencehoje.app.ui.screens
 
 import android.app.TimePickerDialog
-import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,16 +17,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vencehoje.app.*
 import com.vencehoje.app.data.BillRepository
-import com.vencehoje.app.logic.* // Importante para o importFromCSV e saveCsvToUri
+import com.vencehoje.app.logic.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     repository: BillRepository,
     onBack: () -> Unit,
-    onExport: () -> Unit, // Certifique-se de passar esses lambdas no seu NavHost
+    onExport: () -> Unit,
     onImport: () -> Unit
 ) {
     val context = LocalContext.current
@@ -70,7 +69,6 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            // SEÇÃO: NOTIFICAÇÕES
             Text(
                 "Notificações",
                 modifier = Modifier.padding(16.dp),
@@ -86,22 +84,52 @@ fun SettingsScreen(
             )
 
             var expandedInsistence by remember { mutableStateOf(false) }
-            Box {
-                ListItem(
-                    headlineContent = { Text("Insistência") },
-                    supportingContent = { Text(insistence) },
-                    leadingContent = { Icon(Icons.Default.Warning, null, tint = Color(0xFF1B5E20)) },
-                    modifier = Modifier.clickable { expandedInsistence = true }
-                )
-                DropdownMenu(expanded = expandedInsistence, onDismissRequest = { expandedInsistence = false }) {
-                    listOf("Padrão", "Alto", "Crítico").forEach { level ->
-                        DropdownMenuItem(
-                            text = { Text(level) },
-                            onClick = {
-                                insistence = level
-                                prefs.edit().putString("insistence", level).apply()
-                                expandedInsistence = false
-                            }
+            Column {
+                Box {
+                    ListItem(
+                        headlineContent = { Text("Insistência") },
+                        supportingContent = { Text(insistence) },
+                        leadingContent = { Icon(Icons.Default.Warning, null, tint = Color(0xFF1B5E20)) },
+                        modifier = Modifier.clickable { expandedInsistence = true }
+                    )
+                    DropdownMenu(expanded = expandedInsistence, onDismissRequest = { expandedInsistence = false }) {
+                        listOf("Padrão", "Alto", "Crítico").forEach { level ->
+                            DropdownMenuItem(
+                                text = { Text(level) },
+                                onClick = {
+                                    insistence = level
+                                    prefs.edit().putString("insistence", level).apply()
+                                    expandedInsistence = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // --- CARD DE EXPLICAÇÃO DA INSISTÊNCIA ---
+                val descricao = when(insistence) {
+                    "Padrão" -> "Notifica apenas uma vez, pontualmente às $notifyTime no dia do vencimento."
+
+                    "Alto" -> "Primeiro alerta às $notifyTime. Depois, o app insiste mais 2 vezes ao dia até você pagar."
+
+                    "Crítico" -> "Começa às $notifyTime e repete a cada 2 horas (até as 22h)."
+
+                    else -> ""
+                }
+
+                Card(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = descricao,
+                            fontSize = 12.sp,
+                            color = Color(0xFFE65100),
+                            lineHeight = 16.sp
                         )
                     }
                 }
@@ -119,7 +147,6 @@ fun SettingsScreen(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // SEÇÃO: DADOS E BACKUP (O QUE ESTAVA FALTANDO)
             Text(
                 "Dados e Segurança",
                 modifier = Modifier.padding(16.dp),
@@ -144,7 +171,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             Text(
-                "Versão 1.0.0 - VenceHoje",
+                "Versão 1.0.1 - VenceHoje",
                 modifier = Modifier.padding(16.dp).fillMaxWidth(),
                 color = Color.Gray,
                 style = MaterialTheme.typography.labelSmall

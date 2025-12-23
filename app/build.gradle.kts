@@ -13,8 +13,8 @@ android {
         applicationId = "com.vencehoje.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.0.9"
+        versionCode = 11
+        versionName = "0.11"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -53,6 +53,8 @@ dependencies {
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation(libs.androidx.core.i18n)
+    implementation(libs.androidx.ui)
     ksp(libs.room.compiler)
 
     testImplementation(libs.junit)

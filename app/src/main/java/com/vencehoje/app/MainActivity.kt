@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.work.*
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.install.model.AppUpdateType
@@ -40,7 +41,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val database = AppDatabase.getDatabase(this)
-        val repository = BillRepository(database.billDao())
+        val repository = BillRepository(database.billDao(), database.categoryDao())
+        setupInitialWorker(this)
+        setContent {
+            VenceHojeTheme {
+                NotificationPermissionHandler()
+                MainScreen(repository)
+            }
+        }
+        lifecycleScope.launch {
+            repository.checkAndSeedCategories()
+        }
+
         setupInitialWorker(this)
         setContent {
             VenceHojeTheme {
@@ -145,6 +157,12 @@ fun MainScreen(repository: BillRepository) {
                     icon = { Icon(Icons.Default.Home, null) }
                 )
                 NavigationDrawerItem(
+                    label = { Text("Categorias") },
+                    selected = currentScreen == "categories",
+                    onClick = { currentScreen = "categories"; scope.launch { drawerState.close() } },
+                    icon = { Icon(Icons.Default.List, null) } // Use um ícone de lista ou label
+                )
+                NavigationDrawerItem(
                     label = { Text("Dashboard") },
                     selected = currentScreen == "charts",
                     onClick = { currentScreen = "charts"; scope.launch { drawerState.close() } },
@@ -174,7 +192,7 @@ fun MainScreen(repository: BillRepository) {
         when(currentScreen) {
             "home" -> BillsListScreen(repository, onMenuClick = { scope.launch { drawerState.open() } })
             "charts" -> DashboardScreen(repository, onBack = { currentScreen = "home" })
-
+            "categories" -> ManageCategoriesScreen(repository, onBack = { currentScreen = "home" })
             "configs" -> SettingsScreen(
                 repository = repository,
                 onBack = { currentScreen = "home" },
@@ -191,3 +209,4 @@ fun MainScreen(repository: BillRepository) {
         }
     }
 }
+

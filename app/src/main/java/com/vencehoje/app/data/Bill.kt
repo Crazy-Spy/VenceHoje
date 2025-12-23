@@ -11,7 +11,7 @@ data class Bill(
     val paidValue: String? = null,
     val dueDate: String,
     val paymentDate: String? = null,
-    val category: String = "Outros",
+    val categoryId: Int,
     val periodicity: String = "Mês",
     val customInterval: Int = 1,
     val totalInstallments: Int = 0,

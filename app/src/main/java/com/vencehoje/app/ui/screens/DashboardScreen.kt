@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vencehoje.app.*
 import com.vencehoje.app.data.BillRepository
 import com.vencehoje.app.ui.components.DashboardLegend
 import com.vencehoje.app.ui.components.PieChart
@@ -29,13 +28,25 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
+    // Coleta as contas e as categorias do banco
     val bills by repository.allBills.collectAsState(initial = emptyList())
+    val categories by repository.allCategories.collectAsState(initial = emptyList())
+
     var selectedMonth by remember { mutableIntStateOf(LocalDate.now().monthValue) }
     var selectedYear by remember { mutableIntStateOf(LocalDate.now().year) }
     var filterMode by remember { mutableStateOf("Pagos") }
     var showMonthYearPicker by remember { mutableStateOf(false) }
     val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
     val scrollState = rememberScrollState()
+
+    // 1. Criamos o mapa de Cores para o Gráfico (Nome -> Color)
+    val categoryColors = remember(categories) {
+        categories.associate {
+            it.name to Color(android.graphics.Color.parseColor(it.colorHex))
+        }.toMutableMap().apply {
+            this["Encargos"] = Color.Red // Cor fixa para juros
+        }
+    }
 
     fun parseCurrency(value: String): Double {
         return try {
@@ -44,56 +55,35 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
         } catch (e: Exception) { 0.0 }
     }
 
-    val paidTotals = remember(bills, selectedMonth, selectedYear) {
-        val totals = mutableMapOf<String, Double>()
-        var totalEncargos = 0.0
-        bills.filter { bill ->
-            if (!bill.isPaid) return@filter false
-            val dateStr = bill.paymentDate ?: bill.dueDate
-            try {
-                val date = LocalDate.parse(dateStr, formatter)
-                date.monthValue == selectedMonth && date.year == selectedYear
-            } catch (e: Exception) { false }
-        }.forEach { bill ->
-            val valorBase = parseCurrency(bill.value)
-            val valorPagoFinal = if (bill.paidValue != null) parseCurrency(bill.paidValue!!) else valorBase
-            totals[bill.category] = (totals[bill.category] ?: 0.0) + valorBase
-            if (valorPagoFinal > valorBase) { totalEncargos += (valorPagoFinal - valorBase) }
-        }
-        if (totalEncargos > 0.01) { totals["Encargos"] = (totals["Encargos"] ?: 0.0) + totalEncargos }
-        totals
-    }
-
-// Procure por "val displayData = remember..."
-    val displayData = remember(bills, selectedMonth, selectedYear, filterMode) {
+    // 2. Processamento dos dados para exibição
+    val displayData = remember(bills, categories, selectedMonth, selectedYear, filterMode) {
         val totals = mutableMapOf<String, Double>()
         var totalEncargos = 0.0
 
         bills.filter { bill ->
             val dateStr = if (bill.isPaid) (bill.paymentDate ?: bill.dueDate) else bill.dueDate
-            val date = try { LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("dd/MM/yyyy")) } catch (e: Exception) { null }
+            val date = try { LocalDate.parse(dateStr, formatter) } catch (e: Exception) { null }
             val matchesDate = date?.monthValue == selectedMonth && date?.year == selectedYear
             val matchesFilter = if (filterMode == "Pagos") bill.isPaid else !bill.isPaid
             matchesDate && matchesFilter
         }.forEach { bill ->
+            // Buscamos o nome da categoria pelo ID
+            val categoryName = categories.find { it.id == bill.categoryId }?.name ?: "Outros"
             val valorBase = parseCurrency(bill.value)
             val isVariable = valorBase < 0.01
 
             if (bill.isPaid) {
                 val valorPagoFinal = if (bill.paidValue != null) parseCurrency(bill.paidValue!!) else valorBase
-
                 if (isVariable) {
-                    // Se é variável, TUDO vai para a categoria
-                    totals[bill.category] = (totals[bill.category] ?: 0.0) + valorPagoFinal
+                    totals[categoryName] = (totals[categoryName] ?: 0.0) + valorPagoFinal
                 } else {
-                    // Se é fixa, separa o valor original dos juros (encargos)
-                    totals[bill.category] = (totals[bill.category] ?: 0.0) + valorBase
+                    totals[categoryName] = (totals[categoryName] ?: 0.0) + valorBase
                     if (valorPagoFinal > valorBase) {
                         totalEncargos += (valorPagoFinal - valorBase)
                     }
                 }
             } else {
-                totals[bill.category] = (totals[bill.category] ?: 0.0) + valorBase
+                totals[categoryName] = (totals[categoryName] ?: 0.0) + valorBase
             }
         }
 
@@ -102,21 +92,11 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
         }
         totals
     }
-    val provisionTotals = remember(bills, selectedMonth, selectedYear) {
-        bills.filter { bill ->
-            if (bill.isPaid) return@filter false
-            try {
-                val date = LocalDate.parse(bill.dueDate, formatter)
-                date.monthValue == selectedMonth && date.year == selectedYear
-            } catch (e: Exception) { false }
-        }.groupBy { it.category }
-            .mapValues { (_, list) -> list.sumOf { parseCurrency(it.value) } }
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Dashboard") },
+                title = { Text("Dashboard", fontWeight = FontWeight.Black) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFF1B5E20),
@@ -160,7 +140,7 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                 }) { Icon(Icons.Default.KeyboardArrowRight, null, tint = Color(0xFF1B5E20)) }
             }
 
-            // --- NOVO: FILTROS RÁPIDOS (CHIPS) ---
+            // --- FILTROS RÁPIDOS (CHIPS) ---
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -180,7 +160,6 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- TÍTULO DINÂMICO ---
             val titleColor = if (filterMode == "Pendentes") Color(0xFFB71C1C) else Color(0xFF2E7D32)
             Text(
                 text = "Resumo: $filterMode",
@@ -189,7 +168,7 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                 color = titleColor
             )
 
-            // --- GRÁFICO E LEGENDA UNIFICADOS ---
+            // --- GRÁFICO E LEGENDA ---
             if (displayData.isEmpty()) {
                 Text(
                     text = "Nada para exibir neste filtro. 🎉",
@@ -198,8 +177,9 @@ fun DashboardScreen(repository: BillRepository, onBack: () -> Unit) {
                     color = Color.Gray
                 )
             } else {
-                PieChart(data = displayData)
-                DashboardLegend(data = displayData)
+                // CORREÇÃO: Passando o mapa de cores para os componentes
+                PieChart(data = displayData, categoryColors = categoryColors)
+                DashboardLegend(data = displayData, categoryColors = categoryColors)
             }
 
             Spacer(modifier = Modifier.height(32.dp))

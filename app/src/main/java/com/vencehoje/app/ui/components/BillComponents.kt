@@ -3,9 +3,10 @@ package com.vencehoje.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,21 +16,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vencehoje.app.data.Bill
+import com.vencehoje.app.data.Category
 import com.vencehoje.app.logic.getDaysRemaining
 import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.*
-import kotlin.compareTo
-import kotlin.unaryMinus
+import com.vencehoje.app.R // O seu pacote real
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 
 @Composable
-fun BillCard(bill: Bill, onDelete: () -> Unit, onPay: () -> Unit, onEdit: () -> Unit) {
+fun BillCard(
+    bill: Bill,
+    category: Category?, // Agora usamos este objeto
+    onDelete: () -> Unit,
+    onPay: () -> Unit,
+    onEdit: () -> Unit
+) {
     val daysRemaining = getDaysRemaining(bill.dueDate)
     val isExpired = !bill.isPaid && daysRemaining < 0
-    // Extrai apenas os números para checar se é zero real
     val numericValue = bill.value.replace(Regex("[^0-9]"), "").toLongOrNull() ?: 0L
+
+    // Resolvemos a cor e o ícone aqui fora para limpar o código abaixo
+    val catColor = if (category != null) {
+        Color(android.graphics.Color.parseColor(category.colorHex))
+    } else {
+        Color(0xFF9E9E9E)
+    }
 
     Card(
         modifier = Modifier
@@ -44,88 +60,164 @@ fun BillCard(bill: Bill, onDelete: () -> Unit, onPay: () -> Unit, onEdit: () -> 
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            // LINHA 1: ÍCONE + NOME + TAGS
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // ÍCONE DINÂMICO
+                Icon(
+                    painter = getIconPainterFromName(category?.iconName ?: "label"),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = catColor
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = bill.name,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (bill.isAutomatic) {
+                        StatusTag(text = "AUTO", containerColor = Color(0xFFFFEB3B), contentColor = Color.Black)
+                    }
+                    if (bill.totalInstallments > 0) {
+                        StatusTag(text = "${bill.currentInstallment}/${bill.totalInstallments}", containerColor = Color.Red, contentColor = Color.White)
+                    }
+                }
+            }
+
+            // LINHA 2: VENCIMENTO / STATUS E VALOR
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = bill.name, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-
-                    if (!bill.isPaid) {
-                        val textTag = when {
-                            daysRemaining < 0 -> "Atrasado há ${-daysRemaining} dias"
-                            daysRemaining == 0L -> "Vence hoje"
-                            daysRemaining == 1L -> "Vence amanhã"
-                            else -> "Vence em $daysRemaining dias"
-                        }
-                        Text(
-                            text = textTag,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isExpired) Color.Red else Color(0xFF1B5E20),
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                    }
-                    Text(text = bill.category, fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                }
-                // ... (Manter lógica de parcelas e AUTO que você já tem)
-            }
-            Divider(modifier = Modifier.padding(vertical = 8.dp), thickness = 0.5.dp, color = Color.LightGray)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
                 Column {
-                    if (bill.isPaid) {
-                        Text(text = "Venc: ${bill.dueDate}", fontSize = 10.sp, color = Color.Gray)
-                        Text(
-                            text = "Pago em: ${bill.paymentDate ?: "--/--/----"}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2E7D32)
-                        )
-                        // Exibição do valor pago (com juros se houver)
-                        if (bill.paidValue != null) {
-                            Text("Valor: ${bill.paidValue}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        Text(
-                            text = "Venc: ${bill.dueDate}",
-                            fontSize = 12.sp,
-                            color = if (isExpired) Color.Red else Color.DarkGray
-                        )
-
-                        // --- LÓGICA DE EXIBIÇÃO DO VALOR ---
-                        val isZero = numericValue == 0L
-                        val displayValue = if (isZero) "Valor Variável" else bill.value
-
-                        Text(
-                            text = displayValue,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = if (isZero) 14.sp else 18.sp,
-                            color = if (isZero) Color(0xFF1976D2) else if (isExpired) Color.Red else Color(0xFF1B5E20)
-                        )
+                    val statusText = when {
+                        bill.isPaid -> "Pago em ${bill.paymentDate}"
+                        daysRemaining < 0 -> "Atrasado há ${-daysRemaining} dias"
+                        daysRemaining == 0L -> "Vence hoje"
+                        else -> "Venc: ${bill.dueDate}"
                     }
+                    Text(
+                        text = statusText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isExpired) Color.Red else if (bill.isPaid) Color(0xFF2E7D32) else Color.DarkGray
+                    )
+                    // CORREÇÃO: Usando o nome da categoria que veio do objeto
+                    Text(
+                        text = category?.name ?: "Outros",
+                        fontSize = 10.sp,
+                        color = Color.Gray,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-                Row {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, null, tint = Color.LightGray)
-                    }
-                    if (!bill.isPaid && !bill.isAutomatic) {
-                        Button(
-                            onClick = onPay,
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isExpired) Color.Red else Color(0xFF1B5E20))
-                        ) {
-                            Text("PAGUEI", fontSize = 12.sp)
-                        }
+
+                val isZero = numericValue == 0L
+                val displayValue = if (bill.isPaid && bill.paidValue != null) bill.paidValue!! else if (isZero) "Variável" else bill.value
+
+                Text(
+                    text = displayValue,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp,
+                    color = if (isZero) Color(0xFF1976D2) else if (isExpired) Color.Red else Color(0xFF1B5E20)
+                )
+            }
+
+            // LINHA 3: AÇÕES
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, null, tint = Color.LightGray.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                }
+
+                if (!bill.isPaid && !bill.isAutomatic) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = onPay,
+                        modifier = Modifier.height(30.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isExpired) Color.Red else Color(0xFF1B5E20))
+                    ) {
+                        Text("PAGUEI", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
         }
     }
 }
+
+// Mapeamento de String para Icon
+@Composable
+fun getIconPainterFromName(iconName: String): Painter {
+    return when (iconName) {
+        "home" -> rememberVectorPainter(Icons.Default.Home)
+        "shopping_cart" -> rememberVectorPainter(Icons.Default.ShoppingCart)
+        "directions_car" -> painterResource(id = R.drawable.ic_directions_car_vencehoje)
+        "celebration" -> painterResource(id = R.drawable.ic_celebration_vencehoje)
+        "medical_services" -> painterResource(id = R.drawable.ic_medical_vencehoje)
+        "restaurant" -> painterResource(id = R.drawable.ic_restaurant_vencehoje)
+        "school" -> painterResource(id = R.drawable.ic_school_vencehoje)
+        else -> painterResource(id = R.drawable.ic_label_vencehoje)
+    }
+}
+
+@Composable
+fun CategoryDisplay(iconName: String, colorHex: String, modifier: Modifier = Modifier) {
+    val catColor = try {
+        Color(android.graphics.Color.parseColor(colorHex))
+    } catch (e: Exception) {
+        Color.Gray
+    }
+
+    // Se tiver mais de 3 caracteres, assumimos que é um nome de ícone do sistema (ex: "shopping")
+    // Se for curto ou tiver caracteres especiais, é emoji.
+    val isSystemIcon = iconName.length > 3 && !iconName.any { Character.isSurrogate(it) }
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (isSystemIcon) {
+            Icon(
+                painter = getIconPainterFromName(iconName),
+                contentDescription = null,
+                tint = catColor,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(
+                text = iconName,
+                fontSize = 20.sp // Emojis ficam bem nesse tamanho
+            )
+        }
+    }
+}
+
+@Composable
+fun StatusTag(text: String, containerColor: Color, contentColor: Color) {
+    Surface(
+        color = containerColor,
+        shape = RoundedCornerShape(4.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            color = contentColor
+        )
+    }
+}
+
 @Composable
 fun SummaryCard(bills: List<Bill>, isHistoryTab: Boolean) {
     val currencyFormatter = NumberFormat.getCurrencyInstance(Locale("pt", "BR"))
@@ -171,18 +263,5 @@ fun SummaryCard(bills: List<Bill>, isHistoryTab: Boolean) {
                 }
             }
         }
-    }
-}
-
-fun getCategoryColor(category: String): Color {
-    return when(category) {
-        "Moradia" -> Color(0xFF1976D2)
-        "Alimentação" -> Color(0xFF388E3C)
-        "Transporte" -> Color(0xFFFBC02D)
-        "Saúde" -> Color(0xFF2FD3B2)
-        "Lazer" -> Color(0xFF7B1FA2)
-        "Educação" -> Color(0xFF00796B)
-        "Encargos" -> Color(0xFFFF0000)
-        else -> Color(0xFF9E9E9E)
     }
 }

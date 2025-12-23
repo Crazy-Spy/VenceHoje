@@ -6,10 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.vencehoje.app.data.Bill
 import com.vencehoje.app.data.BillDao
+import com.vencehoje.app.data.Category
+import com.vencehoje.app.data.CategoryDao
 
-@Database(entities = [Bill::class], version = 1, exportSchema = false)
+// Atualizado para versão 2 e inclusão da entidade Category
+@Database(entities = [Bill::class, Category::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun billDao(): BillDao
+    abstract fun categoryDao(): CategoryDao
 
     companion object {
         @Volatile
@@ -21,7 +25,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "vencehoje_database"
-                ).build()
+                )
+                    // ATENÇÃO: Isso apagará os dados atuais para aplicar a nova estrutura do Bill.kt
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,18 +25,31 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vencehoje.app.data.Bill
+import com.vencehoje.app.data.BillRepository
 import com.vencehoje.app.logic.getDaysRemaining
+import com.vencehoje.app.ui.components.getIconPainterFromName
+import com.vencehoje.app.ui.screens.CategoryDisplay
 import java.text.NumberFormat
 import java.time.format.TextStyle
 import java.util.*
-
-// Mova para cá: AddEditBillDialog, LatePaymentDialog e MonthYearPickerDialog
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddEditBillDialog(bill: Bill? = null, onDismiss: () -> Unit, onSave: (Bill) -> Unit) {
+fun AddEditBillDialog(
+    bill: Bill? = null,
+    repository: BillRepository,
+    onDismiss: () -> Unit,
+    onSave: (Bill) -> Unit
+) {
+    val categories by repository.allCategories.collectAsState(initial = emptyList())
+    var showInfoDialog by remember { mutableStateOf(false) }
+
+    // Estados do Formulário
     var name by remember { mutableStateOf(bill?.name ?: "") }
-    var category by remember { mutableStateOf(bill?.category ?: "Outros") }
+    var selectedCategoryId by remember { mutableIntStateOf(bill?.categoryId ?: 7) }
     var dueDate by remember { mutableStateOf(bill?.dueDate ?: "") }
     var periodicity by remember { mutableStateOf(bill?.periodicity ?: "Mês") }
     var isAutomatic by remember { mutableStateOf(bill?.isAutomatic ?: false) }
@@ -44,29 +59,50 @@ fun AddEditBillDialog(bill: Bill? = null, onDismiss: () -> Unit, onSave: (Bill) 
 
     val context = LocalContext.current
     val calendar = Calendar.getInstance()
+    val selectedCategory = categories.find { it.id == selectedCategoryId }
 
-    // Formatação de Moeda em tempo real
+    // Formatação de Moeda
     val formattedValue = remember(rawValue) {
         val parsed = rawValue.toDoubleOrNull() ?: 0.0
         NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(parsed / 100)
     }
 
-    // Lógica da Frase de Periodicidade
-    val periodicidadeTexto = remember(customInterval, periodicity, dueDate) {
-        if (dueDate.isBlank()) "Informe o vencimento para ver a recorrência."
-        else {
-            val dia = dueDate.split("/").firstOrNull() ?: ""
-            val intervalo = customInterval.toIntOrNull() ?: 1
-            val plural = if (intervalo > 1) "s" else ""
+    // --- LÓGICA DE RECORRÊNCIA INTELIGENTE ---
+    val intervalInt = customInterval.toIntOrNull() ?: 1
+    val totalInstallmentsInt = totalInstallments.toIntOrNull() ?: 0
 
-            when (periodicity) {
-                "Dia" -> "Repete a cada $intervalo dia$plural."
-                "Semana" -> "Repete a cada $intervalo semana$plural."
-                "Mês" -> if (intervalo == 1) "Repetida mensalmente todo dia $dia."
-                else "Repetida a cada $intervalo meses todo dia $dia."
-                "Ano" -> "Repetida anualmente todo dia $dia."
-                else -> ""
-            }
+    val periodicityLabel = when (periodicity) {
+        "Dia" -> if (intervalInt == 1) "dia" else "dias"
+        "Semana" -> if (intervalInt == 1) "semana" else "semanas"
+        "Mês" -> if (intervalInt == 1) "mês" else "meses"
+        "Ano" -> if (intervalInt == 1) "ano" else "anos"
+        else -> "mês"
+    }
+
+    val finalDateText = remember(dueDate, intervalInt, periodicity, totalInstallmentsInt) {
+        if (totalInstallmentsInt <= 1 || dueDate.isBlank()) ""
+        else {
+            try {
+                val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+                val startDate = LocalDate.parse(dueDate, formatter)
+                val finalDate = when (periodicity) {
+                    "Dia" -> startDate.plusDays((intervalInt * (totalInstallmentsInt - 1)).toLong())
+                    "Semana" -> startDate.plusWeeks((intervalInt * (totalInstallmentsInt - 1)).toLong())
+                    "Mês" -> startDate.plusMonths((intervalInt * (totalInstallmentsInt - 1)).toLong())
+                    "Ano" -> startDate.plusYears((intervalInt * (totalInstallmentsInt - 1)).toLong())
+                    else -> startDate
+                }
+                " | Última em ${finalDate.format(formatter)}"
+            } catch (e: Exception) { "" }
+        }
+    }
+
+    val repetitionText = remember(intervalInt, periodicityLabel, totalInstallmentsInt, finalDateText) {
+        val prefix = if (intervalInt == 1) "Repete a cada $periodicityLabel" else "Repete a cada $intervalInt $periodicityLabel"
+        when {
+            totalInstallmentsInt == 0 -> "$prefix indefinidamente."
+            totalInstallmentsInt == 1 -> "Parcela única (não repete)."
+            else -> "$prefix por $totalInstallmentsInt vezes$finalDateText."
         }
     }
 
@@ -80,152 +116,6 @@ fun AddEditBillDialog(bill: Bill? = null, onDismiss: () -> Unit, onSave: (Bill) 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (bill == null) "Nova Conta" else "Editar Conta", fontWeight = FontWeight.Black) },
-        text = {
-            LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item {
-                    // NOME DA CONTA
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Nome da conta") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // CATEGORIA E VENCIMENTO (LADO A LADO)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        var expandedCat by remember { mutableStateOf(false) }
-                        val categories = listOf("Moradia", "Transporte", "Saúde", "Lazer", "Alimentação", "Educação", "Outros")
-
-                        ExposedDropdownMenuBox(
-                            expanded = expandedCat,
-                            onExpandedChange = { expandedCat = !expandedCat },
-                            modifier = Modifier.weight(1.2f)
-                        ) {
-                            OutlinedTextField(
-                                value = category,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Categoria") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCat) },
-                                modifier = Modifier.menuAnchor()
-                            )
-                            ExposedDropdownMenu(expanded = expandedCat, onDismissRequest = { expandedCat = false }) {
-                                categories.forEach { cat ->
-                                    DropdownMenuItem(text = { Text(cat) }, onClick = { category = cat; expandedCat = false })
-                                }
-                            }
-                        }
-
-                        OutlinedTextField(
-                            value = dueDate,
-                            onValueChange = {},
-                            label = { Text("Vencimento") },
-                            readOnly = true,
-                            modifier = Modifier.weight(1f),
-                            trailingIcon = {
-                                IconButton(onClick = { datePickerDialog.show() }) {
-                                    Icon(Icons.Default.DateRange, null, tint = Color(0xFF1B5E20))
-                                }
-                            }
-                        )
-                    }
-
-                    // PAGO AUTOMÁTICO (SWITCH)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                            .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Pagamento Automático?", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Marcar como pago no dia", fontSize = 11.sp, color = Color.Gray)
-                        }
-                        Switch(checked = isAutomatic, onCheckedChange = { isAutomatic = it })
-                    }
-
-                    Divider(modifier = Modifier.padding(vertical = 12.dp), thickness = 0.5.dp)
-
-                    // PERIODICIDADE E PARCELAS (TRIO)
-                    Text("Recorrência e Parcelas", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1B5E20))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = customInterval,
-                            onValueChange = { customInterval = it.filter { c -> c.isDigit() } },
-                            label = { Text("Cada") },
-                            modifier = Modifier.weight(0.6f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-
-                        var expandedPer by remember { mutableStateOf(false) }
-                        val periods = listOf("Dia", "Semana", "Mês", "Ano")
-                        ExposedDropdownMenuBox(
-                            expanded = expandedPer,
-                            onExpandedChange = { expandedPer = !expandedPer },
-                            modifier = Modifier.weight(1.2f)
-                        ) {
-                            OutlinedTextField(
-                                value = periodicity,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Período") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPer) },
-                                modifier = Modifier.menuAnchor()
-                            )
-                            ExposedDropdownMenu(expanded = expandedPer, onDismissRequest = { expandedPer = false }) {
-                                periods.forEach { p ->
-                                    DropdownMenuItem(text = { Text(p) }, onClick = { periodicity = p; expandedPer = false })
-                                }
-                            }
-                        }
-
-                        OutlinedTextField(
-                            value = totalInstallments,
-                            onValueChange = { totalInstallments = it.filter { c -> c.isDigit() } },
-                            label = { Text("Parc.") },
-                            placeholder = { Text("0") },
-                            modifier = Modifier.weight(0.7f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
-
-                    // FRASE DINÂMICA
-                    Text(
-                        text = periodicidadeTexto,
-                        fontSize = 12.sp,
-                        color = Color(0xFF2E7D32),
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 4.dp, start = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // VALOR (CENTRALIZADO E DESTAQUE)
-                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        OutlinedTextField(
-                            value = formattedValue,
-                            onValueChange = { rawValue = it.filter { c -> c.isDigit() } },
-                            label = { Text("Valor") },
-                            modifier = Modifier.fillMaxWidth(0.8f),
-                            textStyle = LocalTextStyle.current.copy(
-                                textAlign = TextAlign.Center,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 22.sp,
-                                color = Color(0xFF1B5E20)
-                            ),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                        Text("0,00 = Valor Variável", fontSize = 10.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-            }
-        },
         confirmButton = {
             Button(
                 onClick = {
@@ -233,14 +123,14 @@ fun AddEditBillDialog(bill: Bill? = null, onDismiss: () -> Unit, onSave: (Bill) 
                         onSave(Bill(
                             id = bill?.id ?: 0,
                             name = name,
-                            category = category,
                             value = formattedValue,
                             dueDate = dueDate,
+                            categoryId = selectedCategoryId,
                             isPaid = bill?.isPaid ?: false,
                             periodicity = periodicity,
                             isAutomatic = isAutomatic,
-                            customInterval = customInterval.toIntOrNull() ?: 1,
-                            totalInstallments = totalInstallments.toIntOrNull() ?: 0,
+                            customInterval = intervalInt,
+                            totalInstallments = totalInstallmentsInt,
                             currentInstallment = bill?.currentInstallment ?: 1
                         ))
                     }
@@ -250,9 +140,207 @@ fun AddEditBillDialog(bill: Bill? = null, onDismiss: () -> Unit, onSave: (Bill) 
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancelar", color = Color.Gray) }
+        },
+        title = { Text(if (bill == null) "Nova Conta" else "Editar Conta", fontWeight = FontWeight.Black) },
+        text = {
+            LazyColumn(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nome da conta") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = dueDate,
+                        onValueChange = {},
+                        label = { Text("Data de Vencimento") },
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            IconButton(onClick = { datePickerDialog.show() }) {
+                                Icon(Icons.Default.DateRange, null, tint = Color(0xFF1B5E20))
+                            }
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    var expandedCat by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(
+                        expanded = expandedCat,
+                        onExpandedChange = { expandedCat = !expandedCat },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "Outros",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Categoria") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCat) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            leadingIcon = {
+                                selectedCategory?.let { cat ->
+                                    val catColor = try {
+                                        Color(android.graphics.Color.parseColor(cat.colorHex))
+                                    } catch (e: Exception) {
+                                        Color.Gray
+                                    }
+
+                                    // USA O COMPONENTE NOVO AQUI:
+                                    CategoryDisplay(
+                                        iconName = cat.iconName,
+                                        color = catColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        )
+                        ExposedDropdownMenu(expanded = expandedCat, onDismissRequest = { expandedCat = false }) {
+                            categories.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            val catColor = try {
+                                                Color(android.graphics.Color.parseColor(cat.colorHex))
+                                            } catch (e: Exception) {
+                                                Color.Gray
+                                            }
+
+                                            // AQUI ESTÁ A MÁGICA: TROCAMOS O ICON PELO CATEGORYDISPLAY
+                                            CategoryDisplay(
+                                                iconName = cat.iconName,
+                                                color = catColor,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+
+                                            Spacer(modifier = Modifier.width(16.dp))
+
+                                            Text(
+                                                text = cat.name,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedCategoryId = cat.id
+                                        expandedCat = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Pagamento Automático?", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Marcar como pago no dia", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Switch(checked = isAutomatic, onCheckedChange = { isAutomatic = it })
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Recorrência e Parcelas", color = Color(0xFF1B5E20), fontWeight = FontWeight.Black, fontSize = 13.sp)
+                        IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Info, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = customInterval,
+                            onValueChange = { customInterval = it.filter { c -> c.isDigit() } },
+                            label = { Text("Cada") },
+                            modifier = Modifier.weight(0.6f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+
+                        var expandedPeriod by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expandedPeriod,
+                            onExpandedChange = { expandedPeriod = !expandedPeriod },
+                            modifier = Modifier.weight(1.2f)
+                        ) {
+                            OutlinedTextField(
+                                value = periodicity,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Período") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPeriod) },
+                                modifier = Modifier.menuAnchor()
+                            )
+                            ExposedDropdownMenu(expanded = expandedPeriod, onDismissRequest = { expandedPeriod = false }) {
+                                listOf("Dia", "Semana", "Mês", "Ano").forEach {
+                                    DropdownMenuItem(text = { Text(it) }, onClick = { periodicity = it; expandedPeriod = false })
+                                }
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = totalInstallments,
+                            onValueChange = { totalInstallments = it.filter { c -> c.isDigit() } },
+                            label = { Text("Parc.") },
+                            modifier = Modifier.weight(0.6f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+
+                    Text(
+                        text = repetitionText,
+                        color = Color(0xFF2E7D32),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = formattedValue,
+                        onValueChange = { rawValue = it.replace(Regex("[^0-9]"), "") },
+                        label = { Text("Valor") },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            textAlign = TextAlign.Center,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF1B5E20)
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    Text(
+                        text = "0,00 = Valor Variável",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
         }
     )
+
+    if (showInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Entendi") } },
+            title = { Text("Dica de Recorrência", fontWeight = FontWeight.Bold) },
+            text = { Text("Use 0 parcelas para contas que não terminam (ex: Aluguel). O app gerará as contas automaticamente por tempo indeterminado.") }
+        )
+    }
 }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LatePaymentDialog(bill: Bill, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
@@ -262,7 +350,6 @@ fun LatePaymentDialog(bill: Bill, onDismiss: () -> Unit, onConfirm: (String) -> 
         NumberFormat.getCurrencyInstance(Locale("pt", "BR")).format(parsed / 100)
     }
 
-    // Título dinâmico
     val isLate = getDaysRemaining(bill.dueDate) < 0
     val titleText = if (isLate) "Pago com atraso" else "Confirmar Valor"
 
@@ -344,5 +431,3 @@ fun MonthYearPickerDialog(currentMonth: Int, currentYear: Int, onDismiss: () -> 
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )
 }
-
-
